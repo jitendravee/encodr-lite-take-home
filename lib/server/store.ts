@@ -53,7 +53,68 @@ export const FAIL_URL = "https://cdn.example.com/videos/corrupt.mp4";
  * the failing URL), watch them fail, then make them pass.
  */
 export function computeRun(record: RunRecord, now: number = Date.now()): EncodeRun {
-  throw new Error("Not implemented: computeRun (see TODO above)");
+  const elapsed = Math.max(0, now - record.startedAt);
+  const isCorruptSource = record.sourceUrl === FAIL_URL;
+
+  // The corrupt source behaves exactly like a normal run right up until the fail point — so
+  // check this first, but only once elapsed has actually reached failAtMs.
+  if (isCorruptSource && elapsed >= TIMELINE.failAtMs) {
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "FAILED",
+      // Progress freezes at wherever it was when the failure happened, not at elapsed's actual
+      // (possibly much later) value — a failed run shouldn't look like it kept working.
+      progressPct: percentAt(TIMELINE.failAtMs),
+      message: "Transcoding failed: source file could not be decoded.",
+      error: "The source file appears to be corrupt and could not be transcoded.",
+    };
+  }
+
+  if (elapsed >= TIMELINE.transcodingEndsMs) {
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "COMPLETED",
+      progressPct: 100,
+      message: "Encode complete.",
+      result: makeResult(),
+    };
+  }
+
+  if (elapsed >= TIMELINE.downloadingEndsMs) {
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "TRANSCODING",
+      progressPct: percentAt(elapsed),
+      message: "Transcoding renditions…",
+    };
+  }
+
+  if (elapsed >= TIMELINE.queuedEndsMs) {
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "DOWNLOADING",
+      progressPct: percentAt(elapsed),
+      message: "Downloading source file…",
+    };
+  }
+
+  return {
+    id: record.id,
+    jobId: record.jobId,
+    stage: "QUEUED",
+    progressPct: percentAt(elapsed),
+    message: "Waiting to start…",
+  };
+}
+
+/** Scales elapsed ms across the whole 12s timeline into a 0–100 percentage, clamped both ends. */
+function percentAt(elapsedMs: number): number {
+  const pct = (elapsedMs / TIMELINE.transcodingEndsMs) * 100;
+  return Math.min(100, Math.max(0, Math.round(pct)));
 }
 
 // ---------------------------------------------------------------------------
