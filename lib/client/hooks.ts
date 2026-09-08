@@ -52,18 +52,22 @@ export function useStartRun(jobId: string) {
 }
 
 /**
- * TASK 4 — TODO(candidate): a mutation that creates a job.
+ * TASK 4 — implemented: a mutation that creates a job.
  *
- * It should POST the form values to /api/jobs and, on success, invalidate jobKeys.all so the
- * list picks up the new job. Model it on useStartRun above.
- *
- * The return type of the POST is Job. The input type is CreateJobInput (imported above), which
- * is inferred from the same Zod schema the form uses — so the form, this mutation and the server
- * all agree on the shape.
- *
- * Errors need no special handling here: api.ts throws an ApiError, and the component reads
- * `mutation.error` to decide what to show.
+ * POSTs the form values to /api/jobs and, on success, invalidates jobKeys.all so the list
+ * refetches and picks up the new job — same pattern as useStartRun above. Errors need no special
+ * handling here: api.ts throws an ApiError (with fieldErrors on a 422), and the form reads
+ * mutation.error to decide what to show.
  */
+export function useCreateJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateJobInput) => api.post<Job>("/api/jobs", input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: jobKeys.all });
+    },
+  });
+}
 
 /**
  * TASK 5 — TODO(candidate): fetch a single run's current state.
