@@ -29,7 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <span className="text-neutral-500">{user.email}</span>
           <button
             onClick={logout}
-            className="rounded-md border border-neutral-300 px-3 py-1 hover:bg-neutral-100"
+            className="rounded-md cursor-pointer border border-neutral-300 px-3 py-1 hover:bg-white/10"
           >
             Sign out
           </button>
