@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EncodeRun } from "@/lib/types";
+import { api } from "@/lib/client/api";
+import { isTerminalStage, type EncodeRun } from "@/lib/types";
 
 export interface RunPollingState {
   /** The latest run state we've received, or null before the first response. */
@@ -66,11 +67,61 @@ const initialState: RunPollingState = {
  * isn't working — and this is exactly the bug we'll ask you about in the interview.
  */
 export function useRunPolling(runId: string | null, onFinished?: () => void): RunPollingState {
-  const [state] = useState<RunPollingState>(initialState);
+  const [state, setState] = useState<RunPollingState>(initialState);
 
   useEffect(() => {
+    // Reset for the new runId (or for runId becoming null) — a stale run/log from a previous
+    // runId must never bleed into this one.
+    setState(initialState);
     if (!runId) return;
-    // TODO(candidate): start polling here, and return a cleanup function.
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    async function poll() {
+      let run: EncodeRun;
+      try {
+        run = await api.get<EncodeRun>(`/api/runs/${runId}`);
+      } catch (e) {
+        if (cancelled) return; // the request that outlived unmount/runId-change — ignore it
+        setState((prev) => ({
+          ...prev,
+          polling: false,
+          fetchError: e instanceof Error ? e.message : "Failed to fetch run status",
+        }));
+        return;
+      }
+
+      if (cancelled) return; // same guard, for the success path
+
+      setState((prev) => ({
+        run,
+        polling: !isTerminalStage(run.stage),
+        fetchError: null,
+        // Only append if this message differs from the last one logged — the same stage repeats
+        // across polls and we don't want a wall of identical lines.
+        log: prev.log[prev.log.length - 1] === run.message ? prev.log : [...prev.log, run.message],
+      }));
+
+      if (isTerminalStage(run.stage)) {
+        clearInterval(intervalId); // stop the timer itself — flipping `polling` alone doesn't
+        onFinished?.();
+      }
+    }
+
+    setState((prev) => ({ ...prev, polling: true }));
+    poll(); // fire immediately so the UI doesn't sit blank for a second before the first update
+
+    intervalId = setInterval(poll, 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onFinished is intentionally not a
+    // dependency: including it would restart polling (and lose the log) whenever the parent
+    // re-renders with a new inline callback, which is not the "runId changed" case we want to
+    // react to.
   }, [runId]);
 
   return state;
